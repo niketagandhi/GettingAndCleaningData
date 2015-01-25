@@ -1,75 +1,74 @@
-## Create one R script called run_analysis.R that does the following:
-## 1. Merges the training and the test sets to create one data set.
-## 2. Extracts only the measurements on the mean and standard deviation for each measurement.
-## 3. Uses descriptive activity names to name the activities in the data set
-## 4. Appropriately labels the data set with descriptive activity names.
-## 5. Creates a second, independent tidy data set with the average of each variable for each activity and each subject.
+#!/usr/bin/env Rscript
 
-if (!require("data.table")) {
-  install.packages("data.table")
+## Read data sets and combine
+testData <- read.table("test/X_test.txt")
+trainData <- read.table("train/X_train.txt")
+X <- rbind(testData, trainData)
+
+## Garbage collection
+rm(testData)
+rm(trainData)
+
+## Read subjects and combine
+testSub <- read.table("test/subject_test.txt")
+trainSub <- read.table("train/subject_train.txt")
+S <- rbind(testSub, trainSub)
+
+## Garbage collection
+rm(testSub)
+rm(trainSub)
+
+## Read in data labels and combine
+testLabel <- read.table("test/y_test.txt")
+trainLabel <- read.table("train/y_train.txt")
+Y <- rbind(testLabel, trainLabel)
+
+## Garbage collection
+rm(testLabel)
+rm(trainLabel)
+
+## Read Features List (to be used as column names for data)
+featuresList <- read.table("features.txt", stringsAsFactors=FALSE)
+
+## Use only names from features list
+features <- featuresList$V2
+
+## Logical Vector to keep only std and mean columns
+keepColumns <- grepl("(std|mean[^F])", features, perl=TRUE)
+
+## Keep only data we want, and name it human readable
+X <- X[, keepColumns]
+names(X) <- features[keepColumns]
+names(X) <- gsub("\\(|\\)", "", names(X))
+names(X) <- tolower(names(X))
+
+## Read ActivityList (to add descriptive names to data set)
+activities <- read.table("activity_labels.txt")
+activities[,2] = gsub("_", "", tolower(as.character(activities[,2])))
+Y[,1] = activities[Y[,1], 2]
+names(Y) <- "activity" ## Add activity label
+
+## Add human readable labels to activity names
+names(S) <- "subject"
+tidyData <- cbind(S, Y, X)
+write.table(tidyData, "tidyData.txt")
+
+## Create second tiny data set with avg of each var for each act and each sub
+uS = unique(S)[,1]
+nS = length(uS)
+nA = length(activities[,1])
+nC = length(names(tidyData))
+td = tidyData[ 1:(nS*nA), ]
+
+row = 1
+for (s in 1:nS) {
+	for (a in 1:nA) {
+		td[row,1] = uS[s]
+		td[row,2] = activities[a, 2]
+		tmp <- tidyData[tidyData$subject==s & tidyData$activity==activities[a,2],]
+		td[row, 3:nC] <- colMeans(tmp[, 3:nC])
+		row = row + 1
+	}
 }
 
-if (!require("reshape2")) {
-  install.packages("reshape2")
-}
-
-require("data.table")
-require("reshape2")
-
-# Load: activity labels
-activity_labels <- read.table("./UCI HAR Dataset/activity_labels.txt")[,2]
-
-# Load: data column names
-features <- read.table("./UCI HAR Dataset/features.txt")[,2]
-
-# Extract only the measurements on the mean and standard deviation for each measurement.
-extract_features <- grepl("mean|std", features)
-
-# Load and process X_test & y_test data.
-X_test <- read.table("./UCI HAR Dataset/test/X_test.txt")
-y_test <- read.table("./UCI HAR Dataset/test/y_test.txt")
-subject_test <- read.table("./UCI HAR Dataset/test/subject_test.txt")
-
-names(X_test) = features
-
-# Extract only the measurements on the mean and standard deviation for each measurement.
-X_test = X_test[,extract_features]
-
-# Load activity labels
-y_test[,2] = activity_labels[y_test[,1]]
-names(y_test) = c("Activity_ID", "Activity_Label")
-names(subject_test) = "subject"
-
-# Bind data
-test_data <- cbind(as.data.table(subject_test), y_test, X_test)
-
-# Load and process X_train & y_train data.
-X_train <- read.table("./UCI HAR Dataset/train/X_train.txt")
-y_train <- read.table("./UCI HAR Dataset/train/y_train.txt")
-
-subject_train <- read.table("./UCI HAR Dataset/train/subject_train.txt")
-
-names(X_train) = features
-
-# Extract only the measurements on the mean and standard deviation for each measurement.
-X_train = X_train[,extract_features]
-
-# Load activity data
-y_train[,2] = activity_labels[y_train[,1]]
-names(y_train) = c("Activity_ID", "Activity_Label")
-names(subject_train) = "subject"
-
-# Bind data
-train_data <- cbind(as.data.table(subject_train), y_train, X_train)
-
-# Merge test and train data
-data = rbind(test_data, train_data)
-
-id_labels   = c("subject", "Activity_ID", "Activity_Label")
-data_labels = setdiff(colnames(data), id_labels)
-melt_data      = melt(data, id = id_labels, measure.vars = data_labels)
-
-# Apply mean function to dataset using dcast function
-tidy_data   = dcast(melt_data, subject + Activity_Label ~ variable, mean)
-
-write.table(tidy_data, file = "./tidy_data.txt")
+write.table(td, "tidyData2.txt")
